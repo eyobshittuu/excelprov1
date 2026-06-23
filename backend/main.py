@@ -19,6 +19,7 @@ app.add_middleware(
         "http://localhost:3005",
         "http://localhost:3000",
         "https://excelprov1.vercel.app",
+        "https://excelprov1-1.onrender.com",
         "https://*.vercel.app",
         "*"
     ],
