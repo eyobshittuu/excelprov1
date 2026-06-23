@@ -15,7 +15,13 @@ app = FastAPI(title="Excel Regex Pro API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for single-platform deployment
+    allow_origins=[
+        "http://localhost:3005",
+        "http://localhost:3000",
+        "https://excelprov1.vercel.app",
+        "https://*.vercel.app",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
