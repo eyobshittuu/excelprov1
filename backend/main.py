@@ -28,13 +28,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Serve React build files
 FRONTEND_BUILD = Path(__file__).parent.parent / "frontend" / "build"
-print(f"Looking for frontend build at: {FRONTEND_BUILD}")
-print(f"Frontend build exists: {FRONTEND_BUILD.exists()}")
 if FRONTEND_BUILD.exists():
-    print(f"Mounting static files from: {FRONTEND_BUILD / 'static'}")
     app.mount("/static", StaticFiles(directory=str(FRONTEND_BUILD / "static")), name="static")
-else:
-    print(f"Frontend build directory not found. Current dir: {Path(__file__).parent}")
 
 class FindReplaceRequest(BaseModel):
     filename: str
@@ -352,36 +347,13 @@ async def download_file(filename: str):
 @app.get("/{full_path:path}")
 async def serve_react_app(full_path: str):
     """Serve React app for all non-API routes"""
-    print(f"Requested path: {full_path}")
-    print(f"Frontend build exists: {FRONTEND_BUILD.exists()}")
-    
     if FRONTEND_BUILD.exists():
-        # Handle root path
-        if full_path == "" or full_path == "/":
-            index_path = FRONTEND_BUILD / "index.html"
-            print(f"Serving index.html from: {index_path}")
-            if index_path.exists():
-                return FileResponse(index_path)
-        
-        # Try to serve the requested file
         file_path = FRONTEND_BUILD / full_path
-        print(f"Looking for file: {file_path}")
-        
         if file_path.is_file():
             return FileResponse(file_path)
-        
         # If file doesn't exist, serve index.html (for React Router)
-        index_path = FRONTEND_BUILD / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-        
-        return {"error": "index.html not found", "build_dir": str(FRONTEND_BUILD)}
-    
-    return {
-        "message": "Frontend not built. Run 'npm run build' in frontend directory",
-        "expected_path": str(FRONTEND_BUILD),
-        "current_dir": str(Path(__file__).parent)
-    }
+        return FileResponse(FRONTEND_BUILD / "index.html")
+    return {"message": "Frontend not built. Run 'npm run build' in frontend directory"}
 
 if __name__ == "__main__":
     import uvicorn
