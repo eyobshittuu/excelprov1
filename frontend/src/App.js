@@ -101,6 +101,33 @@ function App() {
   const [lookupColumns, setLookupColumns] = useState([]);
   const [targetColumns, setTargetColumns] = useState([]);
 
+  // Merge Sheets states
+  const [leftSheet, setLeftSheet] = useState('');
+  const [rightSheet, setRightSheet] = useState('');
+  const [leftKey, setLeftKey] = useState('');
+  const [rightKey, setRightKey] = useState('');
+  const [mergeType, setMergeType] = useState('inner');
+  const [leftColumns, setLeftColumns] = useState([]);
+  const [rightColumns, setRightColumns] = useState([]);
+
+  // XLOOKUP states
+  const [xlookupSheet, setXlookupSheet] = useState('');
+  const [xlookupColumn, setXlookupColumn] = useState('');
+  const [xlookupTargetSheet, setXlookupTargetSheet] = useState('');
+  const [xlookupTargetColumn, setXlookupTargetColumn] = useState('');
+  const [xlookupReturnColumns, setXlookupReturnColumns] = useState([]);
+  const [xlookupMatchType, setXlookupMatchType] = useState('exact');
+  const [xlookupSheetColumns, setXlookupSheetColumns] = useState([]);
+  const [xlookupTargetColumns, setXlookupTargetColumns] = useState([]);
+
+  // Reconcile states
+  const [reconcileSheet1, setReconcileSheet1] = useState('');
+  const [reconcileSheet2, setReconcileSheet2] = useState('');
+  const [reconcileKeyColumn, setReconcileKeyColumn] = useState('');
+  const [reconcileCompareColumns, setReconcileCompareColumns] = useState([]);
+  const [reconcileSheet1Columns, setReconcileSheet1Columns] = useState([]);
+  const [reconcileSheet2Columns, setReconcileSheet2Columns] = useState([]);
+
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     setResult(null);
@@ -248,6 +275,175 @@ function App() {
     }
   };
 
+  const handleLeftSheetChange = async (sheetName) => {
+    setLeftSheet(sheetName);
+    setLeftKey('');
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setLeftColumns(cols);
+    } else {
+      setLeftColumns([]);
+    }
+  };
+
+  const handleRightSheetChange = async (sheetName) => {
+    setRightSheet(sheetName);
+    setRightKey('');
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setRightColumns(cols);
+    } else {
+      setRightColumns([]);
+    }
+  };
+
+  const handleXlookupSheetChange = async (sheetName) => {
+    setXlookupSheet(sheetName);
+    setXlookupColumn('');
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setXlookupSheetColumns(cols);
+    } else {
+      setXlookupSheetColumns([]);
+    }
+  };
+
+  const handleXlookupTargetSheetChange = async (sheetName) => {
+    setXlookupTargetSheet(sheetName);
+    setXlookupTargetColumn('');
+    setXlookupReturnColumns([]);
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setXlookupTargetColumns(cols);
+    } else {
+      setXlookupTargetColumns([]);
+    }
+  };
+
+  const handleReconcileSheet1Change = async (sheetName) => {
+    setReconcileSheet1(sheetName);
+    setReconcileKeyColumn('');
+    setReconcileCompareColumns([]);
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setReconcileSheet1Columns(cols);
+    } else {
+      setReconcileSheet1Columns([]);
+    }
+  };
+
+  const handleReconcileSheet2Change = async (sheetName) => {
+    setReconcileSheet2(sheetName);
+    if (sheetName) {
+      const cols = await loadSheetColumns(sheetName);
+      setReconcileSheet2Columns(cols);
+    } else {
+      setReconcileSheet2Columns([]);
+    }
+  };
+
+  const handleMergeSheets = async () => {
+    if (!leftSheet || !rightSheet || !leftKey || !rightKey) {
+      setResult({ type: 'error', message: 'Please fill in all merge fields' });
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}/merge-sheets`, {
+        filename: uploadedFilename,
+        left_sheet: leftSheet,
+        right_sheet: rightSheet,
+        left_key: leftKey,
+        right_key: rightKey,
+        merge_type: mergeType
+      });
+      setResult({ 
+        type: 'success', 
+        message: response.data.message,
+        downloadFile: response.data.output_file
+      });
+    } catch (error) {
+      setResult({ type: 'error', message: error.response?.data?.detail || 'Merge failed' });
+    }
+    setLoading(false);
+  };
+
+  const handleXlookup = async () => {
+    if (!xlookupSheet || !xlookupColumn || !xlookupTargetSheet || !xlookupTargetColumn || xlookupReturnColumns.length === 0) {
+      setResult({ type: 'error', message: 'Please fill in all XLOOKUP fields' });
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}/xlookup`, {
+        filename: uploadedFilename,
+        lookup_sheet: xlookupSheet,
+        lookup_column: xlookupColumn,
+        target_sheet: xlookupTargetSheet,
+        target_column: xlookupTargetColumn,
+        return_columns: xlookupReturnColumns,
+        match_type: xlookupMatchType
+      });
+      setResult({ 
+        type: 'success', 
+        message: response.data.message,
+        downloadFile: response.data.output_file
+      });
+    } catch (error) {
+      setResult({ type: 'error', message: error.response?.data?.detail || 'XLOOKUP failed' });
+    }
+    setLoading(false);
+  };
+
+  const handleReconcile = async () => {
+    if (!reconcileSheet1 || !reconcileSheet2 || !reconcileKeyColumn || reconcileCompareColumns.length === 0) {
+      setResult({ type: 'error', message: 'Please fill in all reconciliation fields' });
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}/reconcile`, {
+        filename: uploadedFilename,
+        sheet1: reconcileSheet1,
+        sheet2: reconcileSheet2,
+        key_column: reconcileKeyColumn,
+        compare_columns: reconcileCompareColumns
+      });
+      setResult({ 
+        type: 'success', 
+        message: `${response.data.message}: ${response.data.total_differences} differences found`,
+        downloadFile: response.data.output_file,
+        details: {
+          only_in_sheet1: response.data.only_in_sheet1,
+          only_in_sheet2: response.data.only_in_sheet2,
+          mismatches: response.data.mismatches
+        }
+      });
+    } catch (error) {
+      setResult({ type: 'error', message: error.response?.data?.detail || 'Reconciliation failed' });
+    }
+    setLoading(false);
+  };
+
+  const toggleReturnColumn = (col) => {
+    if (xlookupReturnColumns.includes(col)) {
+      setXlookupReturnColumns(xlookupReturnColumns.filter(c => c !== col));
+    } else {
+      setXlookupReturnColumns([...xlookupReturnColumns, col]);
+    }
+  };
+
+  const toggleCompareColumn = (col) => {
+    if (reconcileCompareColumns.includes(col)) {
+      setReconcileCompareColumns(reconcileCompareColumns.filter(c => c !== col));
+    } else {
+      setReconcileCompareColumns([...reconcileCompareColumns, col]);
+    }
+  };
+
   const handleDownload = () => {
     if (result?.downloadFile) {
       window.open(`${API_URL}/download/${result.downloadFile}`, '_blank');
@@ -283,6 +479,9 @@ function App() {
                 <option value="find-replace">Find & Replace</option>
                 <option value="sheet-match">Sheet Matching</option>
                 <option value="vlookup">VLOOKUP</option>
+                <option value="merge-sheets">Merge Two Sheets</option>
+                <option value="xlookup">XLOOKUP (Multiple Columns)</option>
+                <option value="reconcile">Reconcile Reports</option>
               </select>
             </div>
 
@@ -470,6 +669,226 @@ function App() {
                 </button>
               </>
             )}
+
+            {operation === 'merge-sheets' && (
+              <>
+                <div className="vlookup-section">
+                  <h3>🔗 Merge Two Sheets</h3>
+                  <p className="vlookup-subtitle">Combine data from two sheets based on a common key</p>
+                  
+                  <div className="vlookup-group">
+                    <h4>Left Sheet</h4>
+                    <div className="form-group">
+                      <label>Sheet Name</label>
+                      <select value={leftSheet} onChange={(e) => handleLeftSheetChange(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Key Column</label>
+                      <select value={leftKey} onChange={(e) => setLeftKey(e.target.value)} disabled={!leftSheet}>
+                        <option value="">Select key column...</option>
+                        {leftColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="vlookup-group">
+                    <h4>Right Sheet</h4>
+                    <div className="form-group">
+                      <label>Sheet Name</label>
+                      <select value={rightSheet} onChange={(e) => handleRightSheetChange(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Key Column</label>
+                      <select value={rightKey} onChange={(e) => setRightKey(e.target.value)} disabled={!rightSheet}>
+                        <option value="">Select key column...</option>
+                        {rightColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Merge Type</label>
+                    <select value={mergeType} onChange={(e) => setMergeType(e.target.value)}>
+                      <option value="inner">Inner (Only matching rows)</option>
+                      <option value="left">Left (All from left sheet)</option>
+                      <option value="right">Right (All from right sheet)</option>
+                      <option value="outer">Outer (All rows from both)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button onClick={handleMergeSheets} disabled={loading} className="btn-primary">
+                  Merge Sheets
+                </button>
+              </>
+            )}
+
+            {operation === 'xlookup' && (
+              <>
+                <div className="vlookup-section">
+                  <h3>🔎 XLOOKUP (Multiple Columns)</h3>
+                  <p className="vlookup-subtitle">Lookup and return multiple columns at once</p>
+                  
+                  <div className="vlookup-group">
+                    <h4>Source Sheet</h4>
+                    <div className="form-group">
+                      <label>Lookup Sheet</label>
+                      <select value={xlookupSheet} onChange={(e) => handleXlookupSheetChange(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Lookup Column</label>
+                      <select value={xlookupColumn} onChange={(e) => setXlookupColumn(e.target.value)} disabled={!xlookupSheet}>
+                        <option value="">Select column...</option>
+                        {xlookupSheetColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="vlookup-group">
+                    <h4>Target Sheet</h4>
+                    <div className="form-group">
+                      <label>Target Sheet</label>
+                      <select value={xlookupTargetSheet} onChange={(e) => handleXlookupTargetSheetChange(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Match Column</label>
+                      <select value={xlookupTargetColumn} onChange={(e) => setXlookupTargetColumn(e.target.value)} disabled={!xlookupTargetSheet}>
+                        <option value="">Select column to match...</option>
+                        {xlookupTargetColumns.map(col => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Return Columns (Select Multiple)</label>
+                      <div className="checkbox-grid">
+                        {xlookupTargetColumns.map(col => (
+                          <label key={col} className="checkbox-label">
+                            <input 
+                              type="checkbox" 
+                              checked={xlookupReturnColumns.includes(col)}
+                              onChange={() => toggleReturnColumn(col)}
+                            />
+                            {col}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="help-text">{xlookupReturnColumns.length} columns selected</p>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Match Type</label>
+                    <select value={xlookupMatchType} onChange={(e) => setXlookupMatchType(e.target.value)}>
+                      <option value="exact">Exact Match</option>
+                      <option value="contains">Contains</option>
+                      <option value="regex">Regex Pattern</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button onClick={handleXlookup} disabled={loading} className="btn-primary">
+                  Execute XLOOKUP
+                </button>
+              </>
+            )}
+
+            {operation === 'reconcile' && (
+              <>
+                <div className="vlookup-section">
+                  <h3>⚖️ Reconcile Reports</h3>
+                  <p className="vlookup-subtitle">Compare two sheets and identify differences</p>
+                  
+                  <div className="vlookup-group">
+                    <h4>First Sheet</h4>
+                    <div className="form-group">
+                      <label>Sheet Name</label>
+                      <select value={reconcileSheet1} onChange={(e) => handleReconcileSheet1Change(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="vlookup-group">
+                    <h4>Second Sheet</h4>
+                    <div className="form-group">
+                      <label>Sheet Name</label>
+                      <select value={reconcileSheet2} onChange={(e) => handleReconcileSheet2Change(e.target.value)}>
+                        <option value="">Select sheet...</option>
+                        {sheets.map(sheet => (
+                          <option key={sheet} value={sheet}>{sheet}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Key Column (Must exist in both sheets)</label>
+                    <select value={reconcileKeyColumn} onChange={(e) => setReconcileKeyColumn(e.target.value)} disabled={!reconcileSheet1 || !reconcileSheet2}>
+                      <option value="">Select key column...</option>
+                      {reconcileSheet1Columns.filter(col => reconcileSheet2Columns.includes(col)).map(col => (
+                        <option key={col} value={col}>{col}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Columns to Compare (Select Multiple)</label>
+                    <div className="checkbox-grid">
+                      {reconcileSheet1Columns.filter(col => reconcileSheet2Columns.includes(col) && col !== reconcileKeyColumn).map(col => (
+                        <label key={col} className="checkbox-label">
+                          <input 
+                            type="checkbox" 
+                            checked={reconcileCompareColumns.includes(col)}
+                            onChange={() => toggleCompareColumn(col)}
+                          />
+                          {col}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="help-text">{reconcileCompareColumns.length} columns selected for comparison</p>
+                  </div>
+                </div>
+
+                <button onClick={handleReconcile} disabled={loading} className="btn-primary">
+                  Reconcile Sheets
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -480,6 +899,13 @@ function App() {
               <ul>
                 {result.sheets.map(sheet => <li key={sheet}>{sheet}</li>)}
               </ul>
+            )}
+            {result.details && (
+              <div className="result-details">
+                <p>📊 Only in {reconcileSheet1}: {result.details.only_in_sheet1}</p>
+                <p>📊 Only in {reconcileSheet2}: {result.details.only_in_sheet2}</p>
+                <p>⚠️ Value mismatches: {result.details.mismatches}</p>
+              </div>
             )}
             {result.downloadFile && (
               <button onClick={handleDownload} className="btn-download">

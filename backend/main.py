@@ -103,6 +103,30 @@ class MergeColumnsRequest(BaseModel):
     pattern: str
     separator: str = " "
 
+class MergeSheetsRequest(BaseModel):
+    filename: str
+    left_sheet: str
+    right_sheet: str
+    left_key: str
+    right_key: str
+    merge_type: str = "inner"  # inner, left, right, outer
+
+class XLookupRequest(BaseModel):
+    filename: str
+    lookup_sheet: str
+    lookup_column: str
+    target_sheet: str
+    target_column: str
+    return_columns: List[str]
+    match_type: str = "exact"
+
+class ReconcileRequest(BaseModel):
+    filename: str
+    sheet1: str
+    sheet2: str
+    key_column: str
+    compare_columns: List[str]
+
 @app.get("/")
 async def root():
     return {"message": "Excel Regex Pro API"}
@@ -340,6 +364,209 @@ async def vlookup_write(request: VLookupRequest):
         print(f"Error in vlookup_write: {str(e)}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/merge-sheets")
+async def merge_sheets(request: MergeSheetsRequest):
+    """Merge two sheets based on a common key"""
+    try:
+        file_path = os.path.join(UPLOAD_DIR, request.filename)
+        df_workbook = pd.read_excel(file_path, sheet_name=None)
+        
+        if request.left_sheet not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.left_sheet}' not found")
+        if request.right_sheet not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.right_sheet}' not found")
+        
+        left_df = df_workbook[request.left_sheet]
+        right_df = df_workbook[request.right_sheet]
+        
+        if request.left_key not in left_df.columns:
+            raise HTTPException(status_code=400, detail=f"Column '{request.left_key}' not found in {request.left_sheet}")
+        if request.right_key not in right_df.columns:
+            raise HTTPException(status_code=400, detail=f"Column '{request.right_key}' not found in {request.right_sheet}")
+        
+        # Perform merge
+        merged_df = pd.merge(
+            left_df, 
+            right_df, 
+            left_on=request.left_key, 
+            right_on=request.right_key, 
+            how=request.merge_type,
+            suffixes=('_left', '_right')
+        )
+        
+        # Save to new file
+        output_filename = f"merged_{request.filename}"
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            merged_df.to_excel(writer, sheet_name='Merged_Data', index=False)
+            for sheet_name, df in df_workbook.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        return {
+            "message": f"Sheets merged successfully: {len(merged_df)} rows",
+            "rows": len(merged_df),
+            "columns": len(merged_df.columns),
+            "output_file": output_filename
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/xlookup")
+async def xlookup(request: XLookupRequest):
+    """Perform XLOOKUP with multiple return columns"""
+    try:
+        file_path = os.path.join(UPLOAD_DIR, request.filename)
+        df_workbook = pd.read_excel(file_path, sheet_name=None)
+        
+        if request.lookup_sheet not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.lookup_sheet}' not found")
+        if request.target_sheet not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.target_sheet}' not found")
+        
+        lookup_df = df_workbook[request.lookup_sheet]
+        target_df = df_workbook[request.target_sheet]
+        
+        if request.lookup_column not in lookup_df.columns:
+            raise HTTPException(status_code=400, detail=f"Column '{request.lookup_column}' not found in lookup sheet")
+        if request.target_column not in target_df.columns:
+            raise HTTPException(status_code=400, detail=f"Column '{request.target_column}' not found in target sheet")
+        
+        for col in request.return_columns:
+            if col not in target_df.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col}' not found in target sheet")
+        
+        # Perform lookup for each return column
+        for col in request.return_columns:
+            new_col_name = f"XLOOKUP_{col}"
+            lookup_df[new_col_name] = None
+            
+            for idx, row in lookup_df.iterrows():
+                lookup_val = str(row[request.lookup_column])
+                
+                if request.match_type == "exact":
+                    matched = target_df[target_df[request.target_column].astype(str) == lookup_val]
+                elif request.match_type == "contains":
+                    matched = target_df[target_df[request.target_column].astype(str).str.contains(lookup_val, case=False, na=False)]
+                elif request.match_type == "regex":
+                    matched = target_df[target_df[request.target_column].astype(str).str.match(lookup_val, na=False)]
+                
+                if not matched.empty:
+                    lookup_df.at[idx, new_col_name] = matched.iloc[0][col]
+        
+        # Save to new file
+        output_filename = f"xlookup_{request.filename}"
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            for sheet_name, df in df_workbook.items():
+                if sheet_name == request.lookup_sheet:
+                    lookup_df.to_excel(writer, sheet_name=sheet_name, index=False)
+                else:
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        matches_count = lookup_df[[f"XLOOKUP_{col}" for col in request.return_columns]].notna().any(axis=1).sum()
+        
+        return {
+            "message": f"XLOOKUP completed: {matches_count} matches found",
+            "matches": int(matches_count),
+            "total_rows": len(lookup_df),
+            "columns_added": len(request.return_columns),
+            "output_file": output_filename
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/reconcile")
+async def reconcile(request: ReconcileRequest):
+    """Reconcile two sheets by comparing specific columns"""
+    try:
+        file_path = os.path.join(UPLOAD_DIR, request.filename)
+        df_workbook = pd.read_excel(file_path, sheet_name=None)
+        
+        if request.sheet1 not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.sheet1}' not found")
+        if request.sheet2 not in df_workbook:
+            raise HTTPException(status_code=400, detail=f"Sheet '{request.sheet2}' not found")
+        
+        df1 = df_workbook[request.sheet1]
+        df2 = df_workbook[request.sheet2]
+        
+        if request.key_column not in df1.columns:
+            raise HTTPException(status_code=400, detail=f"Key column '{request.key_column}' not found in {request.sheet1}")
+        if request.key_column not in df2.columns:
+            raise HTTPException(status_code=400, detail=f"Key column '{request.key_column}' not found in {request.sheet2}")
+        
+        for col in request.compare_columns:
+            if col not in df1.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col}' not found in {request.sheet1}")
+            if col not in df2.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col}' not found in {request.sheet2}")
+        
+        # Merge on key column
+        merged = pd.merge(df1, df2, on=request.key_column, how='outer', suffixes=('_sheet1', '_sheet2'), indicator=True)
+        
+        # Create reconciliation report
+        reconcile_data = []
+        
+        for idx, row in merged.iterrows():
+            key_value = row[request.key_column]
+            
+            if row['_merge'] == 'left_only':
+                reconcile_data.append({
+                    request.key_column: key_value,
+                    'Status': 'Only in ' + request.sheet1,
+                    'Difference': 'Missing in ' + request.sheet2
+                })
+            elif row['_merge'] == 'right_only':
+                reconcile_data.append({
+                    request.key_column: key_value,
+                    'Status': 'Only in ' + request.sheet2,
+                    'Difference': 'Missing in ' + request.sheet1
+                })
+            else:
+                # Compare columns
+                differences = []
+                for col in request.compare_columns:
+                    val1 = str(row[f'{col}_sheet1']) if pd.notna(row[f'{col}_sheet1']) else ''
+                    val2 = str(row[f'{col}_sheet2']) if pd.notna(row[f'{col}_sheet2']) else ''
+                    if val1 != val2:
+                        differences.append(f"{col}: '{val1}' vs '{val2}'")
+                
+                if differences:
+                    reconcile_data.append({
+                        request.key_column: key_value,
+                        'Status': 'Mismatch',
+                        'Difference': '; '.join(differences)
+                    })
+        
+        reconcile_df = pd.DataFrame(reconcile_data)
+        
+        # Save to new file
+        output_filename = f"reconcile_{request.filename}"
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            reconcile_df.to_excel(writer, sheet_name='Reconciliation_Report', index=False)
+            merged.to_excel(writer, sheet_name='Merged_Comparison', index=False)
+            for sheet_name, df in df_workbook.items():
+                df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        only_in_sheet1 = len([x for x in reconcile_data if 'Only in ' + request.sheet1 in x.get('Status', '')])
+        only_in_sheet2 = len([x for x in reconcile_data if 'Only in ' + request.sheet2 in x.get('Status', '')])
+        mismatches = len([x for x in reconcile_data if x.get('Status') == 'Mismatch'])
+        
+        return {
+            "message": "Reconciliation completed",
+            "total_differences": len(reconcile_df),
+            "only_in_sheet1": only_in_sheet1,
+            "only_in_sheet2": only_in_sheet2,
+            "mismatches": mismatches,
+            "output_file": output_filename
+        }
+    except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/download/{filename}")
